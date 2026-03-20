@@ -1,3 +1,5 @@
+!!! Have just been made aware there already exists an AI memory tool with the name "mnemo" - name change incoming, sorry.
+
 # mnemo
 
 Persistent memory for Claude Code. Mnemo gives Claude a content-addressed knowledge tree that survives context resets — so it stops rediscovering why your code is structured the way it is.
