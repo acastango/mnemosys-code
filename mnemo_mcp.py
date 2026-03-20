@@ -463,10 +463,12 @@ def memory_recall(message: str, project: str = "") -> str:
             sorted(domain_counts.items(), key=lambda x: -x[1])
         )
         snippets = "; ".join(n.content[:60] for n in cycle_nodes[:3])
-        auto_summary = f"auto-compress turn {_session_turns}: [{domain_str}] {snippets}"
+        captured_turns = _session_turns
+        captured_count = len(_session_addrs)
+        auto_summary = f"auto-compress turn {captured_turns}: [{domain_str}] {snippets}"
         memory_session_compress(auto_summary)
         response += (
-            f"\n\n[Auto-compressed {len(_session_addrs)} nodes at turn {_session_turns}.]"
+            f"\n\n[Auto-compressed {captured_count} nodes at turn {captured_turns}.]"
         )
 
     # Nudge for claiming when significant work has happened without claims
