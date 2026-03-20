@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Optional
 
 from mnemo import Store, Node, supersede as _supersede
-from mnemo_anchor import compute_content_hash, update_file_index
+from mnemo_anchor import compute_content_hash, update_file_index, remove_from_file_index
 from mnemo_log import emit
 
 
@@ -278,18 +278,22 @@ def scan_file(
             "anchors": [claim["anchor"]],
         }
         if i < len(old_addrs) and old_addrs[i] in active:
+            remove_from_file_index(store, old_addrs[i])
             new_addr = _supersede(
                 old_addrs[i], claim["content"], store,
                 reason="scan: file updated",
                 meta_overrides=meta,
             )
             active = store.get_active()
+            # Register new node in file index after supersession
+            if claim["anchor"].get("type") == "content_hash":
+                new_node = store.get(new_addr)
+                if new_node:
+                    update_file_index(store, new_node)
         else:
             node = Node(type="leaf", content=claim["content"], meta=meta)
             store.put(node)
             active.add(node.addr)
-            # Register content-hash anchors in the file index so
-            # memory_read can inject them inline
             if claim["anchor"].get("type") == "content_hash":
                 update_file_index(store, node)
             new_addr = node.addr
