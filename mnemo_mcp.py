@@ -448,14 +448,25 @@ def memory_recall(message: str, project: str = "") -> str:
                  detail={"projects": list({p for p, _ in cross_hits}),
                          "count": len(cross_hits)})
 
-    # Surface pending proposals from previous turn (extraction + maintenance + links + dream)
-    # Nudge for session compression when threshold reached
+    # Auto-compress when threshold reached — don't nudge, just do it
     if _session_turns >= COMPRESS_INTERVAL and _session_addrs:
+        # Derive a summary from the cycle nodes (domain breakdown + snippets)
+        active = store.get_active()
+        cycle_nodes = [store.get(a) for a in _session_addrs if a in active]
+        cycle_nodes = [n for n in cycle_nodes if n]
+        domain_counts: dict[str, int] = {}
+        for n in cycle_nodes:
+            d = n.meta.get("domain", "context")
+            domain_counts[d] = domain_counts.get(d, 0) + 1
+        domain_str = ", ".join(
+            f"{d}({c})" for d, c in
+            sorted(domain_counts.items(), key=lambda x: -x[1])
+        )
+        snippets = "; ".join(n.content[:60] for n in cycle_nodes[:3])
+        auto_summary = f"auto-compress turn {_session_turns}: [{domain_str}] {snippets}"
+        memory_session_compress(auto_summary)
         response += (
-            f"\n\n[Session checkpoint: {_session_turns} turns, "
-            f"{len(_session_addrs)} nodes created this cycle. "
-            f"Call memory_session_compress with a summary of what was "
-            f"worked on and why — capture the reasoning before it fades.]"
+            f"\n\n[Auto-compressed {len(_session_addrs)} nodes at turn {_session_turns}.]"
         )
 
     # Nudge for claiming when significant work has happened without claims
