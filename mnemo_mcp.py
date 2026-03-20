@@ -157,7 +157,7 @@ _store_path_result = _detect_store_path()
 STORE_PATH = _store_path_result[0]
 STORE_IS_V2 = _store_path_result[1]
 GLOBAL_PATH = os.environ.get("MNEMO_GLOBAL", os.path.expanduser("~/.mnemo/global"))
-COMPRESS_INTERVAL = int(os.environ.get("MNEMO_COMPRESS_INTERVAL", "30"))
+COMPRESS_INTERVAL = int(os.environ.get("MNEMO_COMPRESS_INTERVAL", "15"))
 store = Store(STORE_PATH)
 global_store = Store(GLOBAL_PATH)
 log_configure(STORE_PATH)

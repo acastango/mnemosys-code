@@ -263,7 +263,7 @@ Claims can carry anchors that pin them to the codebase:
 | `MNEMO_EMBEDDING_PROVIDER` | `auto` | `voyage`, `openai`, or `auto` |
 | `MNEMO_EMBEDDING_MODEL` | varies | Override embedding model name |
 | `MNEMO_SIDECAR_CAP` | `15000` | Sidecar context budget (chars) |
-| `MNEMO_COMPRESS_INTERVAL` | `30` | Turns between compression nudges |
+| `MNEMO_COMPRESS_INTERVAL` | `15` | Turns between compression nudges |
 | `MNEMO_SMALL_MODEL` | `claude-haiku-4-5-20251001` | Model for background operations |
 | `MNEMO_PROJECT_ROOT` | git root / CWD | Project root for verification anchors |
 | `VOYAGE_API_KEY` | — | Voyage AI embedding provider (no SDK needed) |
