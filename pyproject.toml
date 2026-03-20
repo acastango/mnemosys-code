@@ -1,0 +1,18 @@
+[project]
+name = "mnemo"
+version = "0.1.0"
+description = "Content-addressed project memory for Claude Code"
+requires-python = ">=3.10"
+dependencies = [
+    "fastmcp",
+    "anthropic",
+]
+
+[project.optional-dependencies]
+web = ["fastapi", "uvicorn"]
+sidecar = ["rich"]
+embedding = ["openai"]
+all = ["fastapi", "uvicorn", "rich", "openai"]
+
+[project.urls]
+Repository = "https://github.com/acastango/mnemo-code"

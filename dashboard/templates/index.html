@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>mnemo — observability dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://d3js.org/d3.v7.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <!-- Top Bar -->
+  <header id="topbar">
+    <div class="topbar-left">
+      <h1 class="logo">mnemo</h1>
+      <span class="logo-sub">memory dashboard</span>
+    </div>
+    <div class="topbar-right" id="status-bar">
+      <div class="status-chip" id="status-health" title="Health">
+        <span class="chip-dot"></span>
+        <span class="chip-label">--</span>
+      </div>
+      <div class="status-chip" title="Active nodes">
+        <span class="chip-icon">&#x25A0;</span>
+        <span class="chip-label" id="status-nodes">--</span>
+      </div>
+      <div class="status-chip" title="Context size">
+        <span class="chip-icon">&#x2261;</span>
+        <span class="chip-label" id="status-context">--</span>
+      </div>
+      <div class="status-chip" title="Roots">
+        <span class="chip-icon">&#x25C6;</span>
+        <span class="chip-label" id="status-roots">--</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Tab Navigation -->
+  <nav id="tab-nav">
+    <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="nodes">Nodes</button>
+    <button class="tab-btn" data-tab="graph">Graph</button>
+    <button class="tab-btn" data-tab="log">Log</button>
+  </nav>
+
+  <!-- Tab Panels -->
+  <main id="panels">
+    <!-- Overview Panel -->
+    <section id="panel-overview" class="panel active">
+      <div class="overview-grid">
+        <div class="card card-wide" id="domain-chart-card">
+          <h2 class="card-title">Domain Breakdown</h2>
+          <div id="domain-chart"></div>
+        </div>
+        <div class="card" id="health-card">
+          <h2 class="card-title">System Health</h2>
+          <div id="health-detail"></div>
+        </div>
+        <div class="card" id="metrics-card">
+          <h2 class="card-title">Attention Needed</h2>
+          <div id="attention-metrics"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Nodes Panel -->
+    <section id="panel-nodes" class="panel">
+      <div class="nodes-controls">
+        <div class="filter-group">
+          <label for="filter-domain">Domain</label>
+          <select id="filter-domain">
+            <option value="">All</option>
+            <option value="architecture">architecture</option>
+            <option value="decisions">decisions</option>
+            <option value="patterns">patterns</option>
+            <option value="tasks">tasks</option>
+            <option value="issues">issues</option>
+            <option value="dependencies">dependencies</option>
+            <option value="history">history</option>
+            <option value="context">context</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="sort-field">Sort by</label>
+          <select id="sort-field">
+            <option value="created">Created</option>
+            <option value="confidence">Confidence</option>
+            <option value="recall_count">Recall Count</option>
+            <option value="recall_hit_rate">Hit Rate</option>
+            <option value="coverage_score">Coverage</option>
+            <option value="age_days">Age</option>
+          </select>
+        </div>
+        <button id="nodes-refresh" class="btn-sm">Refresh</button>
+      </div>
+      <div class="table-wrap">
+        <table id="nodes-table">
+          <thead>
+            <tr>
+              <th>Addr</th>
+              <th>Domain</th>
+              <th>Type</th>
+              <th>Age</th>
+              <th>Conf</th>
+              <th>Recalls</th>
+              <th>Hits</th>
+              <th>Rate</th>
+              <th>Preview</th>
+            </tr>
+          </thead>
+          <tbody id="nodes-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Graph Panel -->
+    <section id="panel-graph" class="panel">
+      <div id="graph-container">
+        <svg id="graph-svg"></svg>
+        <div id="graph-tooltip" class="tooltip hidden"></div>
+      </div>
+    </section>
+
+    <!-- Log Panel -->
+    <section id="panel-log" class="panel">
+      <div class="log-controls">
+        <button id="log-pause" class="btn-sm">Pause</button>
+        <button id="log-clear" class="btn-sm">Clear</button>
+        <span id="log-status" class="log-status-text">Connecting...</span>
+      </div>
+      <div id="log-feed" class="log-feed"></div>
+    </section>
+  </main>
+
+  <!-- Node Detail Modal -->
+  <div id="node-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <button class="modal-close">&times;</button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+</body>
+</html>
