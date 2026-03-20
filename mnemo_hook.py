@@ -317,15 +317,6 @@ def _handle_post_edit(event: dict, store_path: str) -> None:
     from mnemo_log import _get_log_path
     log_path = _get_log_path()
 
-    # Trigger binding in background — import sidecar, fire and forget
-    try:
-        from mnemo_extract import ExtractionSidecar
-        sidecar = ExtractionSidecar(store)
-        sidecar.trigger_code_binding(file_path, code_content, log_path)
-    except Exception as e:
-        from mnemo_log import emit
-        emit("binding_error", "subconscious",
-             f"hook binding trigger failed: {e}")
 
 
 # ───────────────────────────────────────────────────────────────────

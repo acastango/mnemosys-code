@@ -149,7 +149,7 @@ The `.mnemo/` directory is gitignored by default. Knowledge stays local to your 
 | `MNEMO_EMBEDDING_PROVIDER` | `auto` | `voyage`, `openai`, or `auto` |
 | `MNEMO_SMALL_MODEL` | `claude-haiku-4-5-20251001` | Model for background extraction |
 | `MNEMO_PROJECT_ROOT` | git root / CWD | Root for file anchor resolution |
-| `ANTHROPIC_API_KEY` | — | Required for extraction sidecar |
+| `ANTHROPIC_API_KEY` | — | Required for Haiku-based operations |
 | `VOYAGE_API_KEY` | — | Voyage AI embeddings (no SDK required) |
 | `OPENAI_API_KEY` | — | OpenAI embeddings |
 

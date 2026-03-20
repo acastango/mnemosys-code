@@ -433,38 +433,69 @@ def retrieve_relevant(message: str, store: Store,
                 "reasons": reasons,
             })
 
-    # --- Link traversal: boost nodes linked from high-scoring ones ---
-    scored_addrs = {item["node"].addr: item for item in scored}
-    link_boosts: dict[str, float] = {}  # addr -> accumulated boost
+    # --- Link traversal: multi-hop BFS (depth 3) from high-scoring seeds ---
+    # Score decays by HOP_DECAY per additional hop from the seed.
+    # Causal links (caused_by, depends_on, blocks) propagate stronger than
+    # associative links (relates_to, enables, contradicts).
+    _CAUSAL_RELS = frozenset({"caused_by", "depends_on", "blocks"})
+    _FWD_CAUSAL  = 0.6   # forward causal weight
+    _FWD_REG     = 0.4   # forward regular weight
+    _REV_CAUSAL  = 0.5   # reverse causal weight (weaker — provenance is noisier)
+    _REV_REG     = 0.3   # reverse regular weight
+    _HOP_DECAY   = 0.6   # score multiplier per hop beyond the first
+    _MAX_DEPTH   = 3     # maximum hops from seed
+    _BUDGET      = 50    # max nodes expanded in BFS (guards against dense graphs)
 
-    for item in scored:
-        # Forward links: this node links TO targets
-        links = item["node"].meta.get("links", [])
-        if links:
-            for link in links:
+    scored_addrs = {item["node"].addr: item for item in scored}
+    link_boosts: dict[str, float] = {}
+    visited: set[str] = set(scored_addrs.keys())  # seeds already scored
+    expanded = 0
+
+    # frontier entries: (node, seed_score, depth)
+    frontier = [(item["node"], item["score"], 1) for item in scored]
+
+    while frontier and expanded < _BUDGET:
+        next_frontier = []
+        for source_node, seed_score, depth in frontier:
+            if expanded >= _BUDGET:
+                break
+            decay = _HOP_DECAY ** (depth - 1)  # hop 1: 1.0x, hop 2: 0.6x, hop 3: 0.36x
+
+            # Forward links: source_node → target
+            for link in source_node.meta.get("links", []):
                 target = link.get("addr", "")
                 rel = link.get("rel", "relates_to")
-                if target not in active:
+                if not target or target not in active:
                     continue
-                boost = item["score"] * 0.4
-                if rel in ("caused_by", "depends_on", "blocks"):
-                    boost = item["score"] * 0.6  # causal links propagate stronger
+                w = _FWD_CAUSAL if rel in _CAUSAL_RELS else _FWD_REG
+                boost = seed_score * w * decay
                 link_boosts[target] = link_boosts.get(target, 0) + boost
+                if target not in visited and depth < _MAX_DEPTH:
+                    visited.add(target)
+                    t_node = store.get(target)
+                    if t_node:
+                        next_frontier.append((t_node, seed_score, depth + 1))
+                        expanded += 1
 
-        # Reverse links: other nodes link TO this node
-        rev_links = store.get_reverse_links(item["node"].addr)
-        for rl in rev_links:
-            source_addr = rl.get("source_addr", "")
-            rel = rl.get("rel", "relates_to")
-            if source_addr not in active:
-                continue
-            # Reverse propagation is weaker: 0.3x base, 0.5x causal
-            boost = item["score"] * 0.3
-            if rel in ("caused_by", "depends_on", "blocks"):
-                boost = item["score"] * 0.5
-            link_boosts[source_addr] = link_boosts.get(source_addr, 0) + boost
+            # Reverse links: other nodes → source_node
+            for rl in store.get_reverse_links(source_node.addr):
+                src = rl.get("source_addr", "")
+                rel = rl.get("rel", "relates_to")
+                if not src or src not in active:
+                    continue
+                w = _REV_CAUSAL if rel in _CAUSAL_RELS else _REV_REG
+                boost = seed_score * w * decay
+                link_boosts[src] = link_boosts.get(src, 0) + boost
+                if src not in visited and depth < _MAX_DEPTH:
+                    visited.add(src)
+                    r_node = store.get(src)
+                    if r_node:
+                        next_frontier.append((r_node, seed_score, depth + 1))
+                        expanded += 1
 
-    # Apply link boosts — either to existing scored nodes or pull in new ones
+        frontier = next_frontier
+
+    # Apply link boosts — add to existing scored nodes or pull in new ones
     for addr, boost in link_boosts.items():
         if addr in scored_addrs:
             scored_addrs[addr]["score"] = round(scored_addrs[addr]["score"] + boost, 3)

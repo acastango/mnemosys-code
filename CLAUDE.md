@@ -27,7 +27,6 @@ mnemo captures this knowledge in a content-addressed tree that persists across s
 mnemo.py           Core engine — Node/Store, compress, supersede, reroot, project knowledge
 mnemo_associate.py Subconscious layer — signal extraction, TF-IDF scoring, domain boosts, link traversal, priority scoring, adaptive depth
 mnemo_retrieval.py Retrieval backends — RetrievalBackend protocol, TfIdfBackend, EmbeddingBackend, compute_coverage_score()
-mnemo_extract.py   Extraction sidecar — Haiku proposes claims in background, conscious decides
 mnemo_explore.py   Tree-aware codebase exploration — recall + grep + gap/tension detection reasoning trace
 mnemo_grep.py      Tree-aware pattern search — intent-driven, annotates results with tree knowledge per file
 mnemo_plan.py      Tree-aware planning context — categorizes nodes by planning role, extracts affected files/blockers
@@ -41,6 +40,8 @@ mnemo_chains.py    Chain operations — create, extend, list, promote, stash/pop
 mnemo_session.py   Session store — ephemeral per-session chain workspace, promote to project
 mnemo_coverage.py  Coverage scoring — how well the tree describes the codebase
 mnemo_map.py       Codebase cartography — section detection, file walk, structure mapping
+mnemo_graph.py     Explicit link-graph traversal — BFS from a node, renders subgraph; used by memory_graph tool
+mnemo_scan.py      Static codebase scanner — AST docstring extraction → tree claims, no LLM, idempotent via scan_index.json
 mnemo_verify.py    Verification anchors — pins claims to code via file/grep/dependency checks
 mnemo_log.py       Structured event emitter — writes JSON Lines to memory.log
 mnemo_sidecar.py   Live sidecar UI — tails memory.log, renders in terminal via Rich
@@ -180,6 +181,7 @@ Layers:
 | `memory_verify` | conscious | Verify anchored claims against codebase (file/grep/dependency checks) |
 | `memory_search` | conscious | TF-IDF search across project + global stores |
 | `memory_query` | conscious | Look up node by address (prefix ok) |
+| `memory_graph` | conscious | Traverse link graph from a node — renders subgraph N hops deep |
 | `memory_provenance` | conscious | Trace derivation chain to leaves |
 | `memory_gap` | conscious | Flag something you don't know — creates a gap node for future resolution |
 | `memory_ask` | conscious | Flag a pending decision or question |
@@ -194,10 +196,10 @@ Layers:
 | `memory_explore` | conscious | Tree-aware codebase exploration — reasoning trace: recall → locate → search → gaps → tensions |
 | `memory_plan` | conscious | Tree-aware planning context — architecture, constraints, risks, state, affected files, blockers |
 | `memory_map` | conscious | Codebase cartography — structure overview with tree coverage |
+| `memory_scan` | conscious | Static AST scan — extracts docstrings/signatures into tree claims, no LLM, idempotent |
 | `memory_coverage` | conscious | Coverage report — how well the tree describes the codebase |
 | `memory_infer` | system | Passive pattern inference from session logs — 5 layers: co-occurrence, recall, corrections, sequences, workflow |
 | `memory_arc` | conscious | Work arcs — create, update, complete, pause, list, detect multi-session goals |
-| `memory_dream` | system | Full tree health review via Haiku — human confirms |
 | `memory_prune_candidates` | system | Find supersession candidates via Jaccard similarity |
 | `memory_cat` | conscious | Render a chain or node as a coherent narrative |
 | `memory_chains` | conscious | List and filter chains in the project and session stores |
@@ -262,11 +264,11 @@ Claims can carry anchors that pin them to the codebase:
 | `MNEMO_EMBEDDING_MODEL` | varies | Override embedding model name |
 | `MNEMO_SIDECAR_CAP` | `15000` | Sidecar context budget (chars) |
 | `MNEMO_COMPRESS_INTERVAL` | `30` | Turns between compression nudges |
-| `MNEMO_SMALL_MODEL` | `claude-haiku-4-5-20251001` | Model for extraction sidecar |
+| `MNEMO_SMALL_MODEL` | `claude-haiku-4-5-20251001` | Model for background operations |
 | `MNEMO_PROJECT_ROOT` | git root / CWD | Project root for verification anchors |
 | `VOYAGE_API_KEY` | — | Voyage AI embedding provider (no SDK needed) |
 | `OPENAI_API_KEY` | — | OpenAI embedding provider (uses openai SDK) |
-| `ANTHROPIC_API_KEY` | — | Required for extraction sidecar Haiku calls |
+| `ANTHROPIC_API_KEY` | — | Required for Haiku-based operations (memory_infer) |
 
 ---
 

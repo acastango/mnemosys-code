@@ -47,7 +47,6 @@ from mnemo import (
 )
 from mnemo_associate import associate, retrieve_relevant
 from mnemo_log import emit, configure as log_configure
-from mnemo_extract import ExtractionSidecar
 from mnemo_explore import explore as _explore
 from mnemo_grep import grep as _grep
 from mnemo_plan import plan as _plan
@@ -162,7 +161,6 @@ COMPRESS_INTERVAL = int(os.environ.get("MNEMO_COMPRESS_INTERVAL", "30"))
 store = Store(STORE_PATH)
 global_store = Store(GLOBAL_PATH)
 log_configure(STORE_PATH)
-_extractor = ExtractionSidecar(store)
 emit("status", "system",
      f"mnemo MCP session started — project: {STORE_PATH}, global: {GLOBAL_PATH}")
 
@@ -451,60 +449,6 @@ def memory_recall(message: str, project: str = "") -> str:
                          "count": len(cross_hits)})
 
     # Surface pending proposals from previous turn (extraction + maintenance + links + dream)
-    proposals = _extractor.take_pending()
-    if proposals:
-        extractions = [p for p in proposals if p.get("type") == "extraction"]
-        links = [p for p in proposals if p.get("type") == "link"]
-        maintenance = [p for p in proposals if p.get("type") == "maintenance"]
-        dreams = [p for p in proposals if p.get("type") == "dream"]
-
-        if extractions:
-            response += "\n\n[Subconscious extraction — proposed claims to review:]"
-            for i, p in enumerate(extractions, 1):
-                scope_tag = " [global]" if p.get("scope") == "global" else ""
-                line = f"\n  {i}. [{p['domain']}]{scope_tag} {p['content']}"
-                if p.get("action") == "update" and p.get("supersedes"):
-                    line += f" (updates {p['supersedes'][:8]})"
-                response += line
-            response += "\n[Accept with memory_claim (use scope='global' for global claims), modify, or ignore.]"
-
-        if links:
-            response += "\n\n[Subconscious — proposed links between existing knowledge:]"
-            for i, p in enumerate(links, 1):
-                reason = f" — {p['reason']}" if p.get("reason") else ""
-                response += (f"\n  {i}. {p['source'][:8]} --{p['rel']}--> "
-                             f"{p['target'][:8]}{reason}")
-            response += "\n[Accept with memory_link, or ignore.]"
-
-        if maintenance:
-            response += "\n\n[Maintenance — proposed tree fixes:]"
-            for i, p in enumerate(maintenance, 1):
-                op = p.get("op", "?")
-                if op == "compress":
-                    addrs = p.get("addresses", [])
-                    short = ", ".join(a[:8] for a in addrs[:4])
-                    response += (f"\n  {i}. Compress {len(addrs)} nodes "
-                                 f"({short}) -> \"{p.get('summary', '')[:60]}\"")
-                elif op == "supersede":
-                    response += (f"\n  {i}. Update {p.get('old_address', '?')[:8]}: "
-                                 f"{p.get('new_content', '')[:60]}")
-                elif op == "recategorize":
-                    response += (f"\n  {i}. Move {p.get('address', '?')[:8]} "
-                                 f"to [{p.get('new_domain', '?')}]")
-            response += "\n[Execute with the appropriate tool, or ignore.]"
-
-        if dreams:
-            response += "\n\n[Dream review — tree health findings:]"
-            for i, p in enumerate(dreams, 1):
-                response += f"\n  {i}. {p['finding']}"
-                if p.get("suggestion"):
-                    response += f"\n     Suggestion: {p['suggestion']}"
-                op = p.get("op", "none")
-                if op != "none" and p.get("addresses"):
-                    addrs = ", ".join(a[:8] for a in p["addresses"][:4])
-                    response += f"\n     [{op}] involves: {addrs}"
-            response += "\n[Act on these findings, or ignore.]"
-
     # Nudge for session compression when threshold reached
     if _session_turns >= COMPRESS_INTERVAL and _session_addrs:
         response += (
@@ -523,15 +467,7 @@ def memory_recall(message: str, project: str = "") -> str:
         )
 
     # Queue extraction for this turn (runs in background thread)
-    _extractor.maybe_extract(message, density)
 
-    # Periodic maintenance — check tree health every 10 turns if non-trivial.
-    # Based on actual health signals (redundancy, domain imbalance), not raw size.
-    # The sidecar caps its own context budget independently.
-    # Full dream runs alongside maintenance for deep review.
-    if _session_turns % 10 == 0 and len(store.get_active()) >= 10:
-        _extractor.maybe_maintain()
-        _extractor.maybe_dream()
 
     return response
 
@@ -720,10 +656,6 @@ def memory_claim(content: str = "", domain: str = "", confidence: float = 0.8,
 
     _save_session_state()
 
-    # Micro-dream: review touched nodes + neighborhood for conflicts/redundancy
-    if claimed_addrs:
-        _extractor.maybe_micro_dream(claimed_addrs)
-
     return "\n".join(results)
 
 
@@ -760,8 +692,6 @@ def memory_update(old_address: str, new_content: str, reason: str = "",
          domain=old.meta.get("domain"),
          detail={"reason": reason, "old_content": old.content})
 
-    # Micro-dream: check new claim against its neighborhood
-    _extractor.maybe_micro_dream([new_addr])
 
     return f"Updated {old.addr[:8]} -> {new_addr}: {new_content}"
 
@@ -793,8 +723,6 @@ def memory_reinforce(address: str) -> str:
          domain=node.meta.get("domain"),
          detail={"reinforcement_count": count})
 
-    # Micro-dream: check reinforced node's neighborhood
-    _extractor.maybe_micro_dream([node.addr])
 
     return f"Reinforced {node.addr}: {node.content[:60]}"
 
@@ -926,6 +854,50 @@ def memory_query(address: str) -> str:
         f"inputs: {node.inputs}{r_info}{c_info}{pv_info}{rl_info}{anchor_info}\n"
         f"content: {node.content}"
     )
+
+
+@mcp.tool()
+def memory_graph(
+    address: str,
+    depth: int = 2,
+    rel_types: str = "",
+    direction: str = "both",
+) -> str:
+    """
+    Traverse the link graph from a node and render the subgraph.
+
+    Unlike recall (which uses links to boost scores implicitly), this tool
+    makes the graph structure explicit — useful for understanding how a decision
+    connects to architecture, or how a bug relates to a dependency chain.
+
+    Args:
+        address:   Node address to start from (prefix matching supported)
+        depth:     Hops to traverse (default 2; max useful is 3-4)
+        rel_types: Comma-separated relationship types to follow
+                   (default: all — caused_by, depends_on, blocks, enables,
+                   relates_to, contradicts)
+        direction: "forward" (this node → others), "reverse" (others → this),
+                   or "both" (default)
+    """
+    from mnemo_graph import traverse_graph, render_graph
+
+    node = store.get(address)
+    if not node:
+        return f"Not found: {address}"
+
+    rels = [r.strip() for r in rel_types.split(",") if r.strip()] or None
+    depth = max(1, min(depth, 5))  # clamp to reasonable range
+
+    result = traverse_graph(store, node.addr, depth=depth,
+                            rel_types=rels, direction=direction)
+    rendered = render_graph(result)
+
+    emit("graph", "conscious",
+         f"graph from {node.addr[:8]} depth={depth} nodes={len(result['nodes'])}",
+         addresses=[node.addr],
+         detail={"depth": depth, "nodes": len(result["nodes"]),
+                 "edges": len(result["edges"])})
+    return rendered
 
 
 @mcp.tool()
@@ -1790,49 +1762,6 @@ def memory_prune_candidates(threshold: float = 0.5) -> str:
 
 
 @mcp.tool()
-def memory_dream() -> str:
-    """
-    Full tree health review — Haiku examines the entire active memory
-    and proposes maintenance actions in plain language.
-
-    This is the "dream mode" for MCP: a periodic deep review that finds
-    redundancy, staleness, miscategorization, gaps, and compression
-    opportunities. Results are written for the human to understand and
-    confirm before any changes are made.
-
-    Call this at natural breakpoints, session starts, or when the tree
-    feels cluttered.
-    """
-    emit("dream", "system", "starting dream review")
-
-    findings = _extractor.dream()
-    if not findings:
-        emit("dream", "system", "dream completed — no findings")
-        return "Dream review complete — the tree looks healthy."
-
-    lines = [f"Dream review — {len(findings)} finding(s):\n"]
-    for i, f in enumerate(findings, 1):
-        lines.append(f"  {i}. {f['finding']}")
-        if f.get("suggestion"):
-            lines.append(f"     Suggestion: {f['suggestion']}")
-        op = f.get("op", "none")
-        if op != "none" and f.get("addresses"):
-            addrs = ", ".join(a[:8] for a in f["addresses"][:4])
-            lines.append(f"     [{op}] involves: {addrs}")
-        lines.append("")
-
-    lines.append(
-        "These are suggestions — tell me which ones to execute, "
-        "or say 'skip' to leave the tree as-is."
-    )
-
-    emit("dream", "system",
-         f"dream completed — {len(findings)} findings",
-         detail={"findings": [f["finding"][:60] for f in findings]})
-    return "\n".join(lines)
-
-
-@mcp.tool()
 def memory_explore(topic: str, deep: bool = False) -> str:
     """
     Tree-aware codebase exploration. Produces a reasoning trace:
@@ -2098,6 +2027,60 @@ def memory_map(path: str, extensions: str = "") -> str:
 
 
 @mcp.tool()
+def memory_scan(path: str = ".", extensions: str = "",
+                force: bool = False) -> str:
+    """
+    Scan a file or directory and commit structural claims to the tree.
+
+    Extracts module docstrings, class docstrings, and public function
+    signatures + docstrings via static analysis (no LLM). Stores each
+    as a claim with a file anchor. Idempotent — unchanged files are
+    skipped on subsequent calls.
+
+    Use this to bootstrap the tree on an existing codebase, or to
+    refresh after significant changes.
+
+    Args:
+        path:       File or directory to scan (default: project root)
+        extensions: Comma-separated extensions to include, e.g. ".py,.ts"
+                    (default: .py .js .ts .tsx .jsx .rs .go .c .h .cpp .cs)
+        force:      Re-scan even unchanged files (default: False)
+    """
+    from pathlib import Path as P
+    from mnemo_scan import scan as _scan
+
+    project_root = P(os.environ.get(
+        "MNEMO_PROJECT_ROOT",
+        os.path.dirname(os.path.abspath(__file__)) or os.getcwd(),
+    ))
+
+    ext_set = None
+    if extensions.strip():
+        ext_set = {e.strip() for e in extensions.split(",") if e.strip()}
+
+    result = _scan(path, store, project_root=project_root,
+                   extensions=ext_set, force=force)
+
+    if "error" in result:
+        return f"Scan failed: {result['error']}"
+
+    lines = [
+        f"Scan complete: {path}",
+        f"  Files scanned:  {result['files_scanned']}",
+        f"  Files skipped:  {result['files_skipped']} (unchanged)",
+        f"  Claims created: {result['claims_created']}",
+    ]
+
+    if result.get("per_file"):
+        lines.append("\nPer file:")
+        for rel, count in sorted(result["per_file"].items()):
+            lines.append(f"  {rel}: {count} claim(s)")
+
+    _save_session_state()
+    return "\n".join(lines)
+
+
+@mcp.tool()
 def memory_coverage(path: str = ".", extensions: str = "") -> str:
     """
     Anchor coverage report: what percentage of this codebase has
@@ -2318,7 +2301,7 @@ def memory_switch(
     Args:
         project_path: Path to project root or .mnemo store directory
     """
-    global STORE_PATH, STORE_IS_V2, store, _extractor
+    global STORE_PATH, STORE_IS_V2, store
     global _session_turns, _session_addrs, _recalled_recent
     global _session_id, _session_store
 
@@ -2348,7 +2331,6 @@ def memory_switch(
     STORE_PATH = new_store_path
     STORE_IS_V2 = os.path.exists(os.path.join(new_store_path, "chains.json"))
     store = Store(STORE_PATH)
-    _extractor = ExtractionSidecar(store)
     log_configure(STORE_PATH)
 
     # Reset session state and load from new store
@@ -2389,7 +2371,7 @@ def memory_init(name: str = "") -> str:
     Args:
         name: Project name for the registry. Defaults to the directory name.
     """
-    global STORE_PATH, STORE_IS_V2, store, _extractor
+    global STORE_PATH, STORE_IS_V2, store
     global _session_turns, _session_addrs, _recalled_recent
     global _session_id, _session_store
 
@@ -2406,7 +2388,6 @@ def memory_init(name: str = "") -> str:
     STORE_PATH = store_path
     STORE_IS_V2 = os.path.exists(os.path.join(store_path, "chains.json"))
     store = Store(STORE_PATH)
-    _extractor = ExtractionSidecar(store)
     log_configure(STORE_PATH)
 
     # Register

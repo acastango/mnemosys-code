@@ -262,40 +262,6 @@ def check_stale_anchors(store: Store, file_path: str,
     return stale
 
 
-def check_conflicts(store: Store, file_path: str,
-                    current_agent_id: str,
-                    project_root: Path | None = None) -> list[dict]:
-    """Find other agents' nodes on this file.
-    Returns [{agent_id, addr, content_preview, requires_response}].
-    Returns [] if current_agent_id is empty. Skips ping nodes."""
-    if not current_agent_id:
-        return []
-
-    nodes = nodes_for_file(store, file_path, project_root)
-    conflicts = []
-    for node in nodes:
-        # Skip ping nodes
-        if node.meta.get("ping"):
-            continue
-        agent_id = node.meta.get("agent_id", "")
-        if not agent_id or agent_id == current_agent_id:
-            continue
-        conflicts.append({
-            "agent_id": agent_id,
-            "addr": node.addr,
-            "content_preview": node.content[:80].replace("\n", " "),
-            "requires_response": bool(node.meta.get("requires_response", False)),
-        })
-
-    return conflicts
-
-
-def conflict_urgency(conflicts: list[dict]) -> str:
-    """Return 'high' if any conflict has requires_response=True, else 'low'."""
-    if any(c.get("requires_response") for c in conflicts):
-        return "high"
-    return "low"
-
 
 def auto_claim(store: Store, session_store: Optional[Store],
                file_path: str, summary: str,

@@ -190,6 +190,7 @@ Skip it if it's derivable from reading the code, or it's just conversation conte
 | Connect two facts | `memory_link(from_addr, to_addr, rel)` |
 | Search the tree | `memory_search(query)` |
 | Look up a node | `memory_query(addr)` |
+| Traverse the link graph | `memory_graph(addr, depth, rel_types, direction)` |
 | Trace a node's history | `memory_provenance(addr)` |
 | Check a claim against codebase | `memory_verify(addr)` |
 | Read a file with tree context | `memory_read(file_path)` |
@@ -199,6 +200,7 @@ Skip it if it's derivable from reading the code, or it's just conversation conte
 | Search code with tree context | `memory_grep(pattern, intent)` |
 | Plan a task | `memory_plan(task)` |
 | File listing with coverage | `memory_glob(pattern)` |
+| Bootstrap tree from codebase | `memory_scan(path)` |
 | Codebase structure overview | `memory_map(path)` |
 | Coverage report | `memory_coverage()` |
 | Compress a cluster | `memory_compress(addrs)` |
@@ -208,7 +210,6 @@ Skip it if it's derivable from reading the code, or it's just conversation conte
 | What changed since last root | `memory_diff()` |
 | Multi-session goal tracking | `memory_arc(action, ...)` |
 | Infer patterns from logs | `memory_infer()` |
-| Health review | `memory_dream()` |
 | Render a chain as narrative | `memory_cat(chain_id)` |
 | List chains | `memory_chains(...)` |
 | Review chain attribution | `memory_blame(chain_id)` |
