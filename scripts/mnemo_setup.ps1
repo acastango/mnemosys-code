@@ -1,9 +1,9 @@
 #
-# mnemo_setup.ps1 — add mnemo project memory to a Claude Code project
+# mnemo_setup.ps1 - add mnemo project memory to a Claude Code project
 #
 # Usage:
 #   cd C:\path\to\your\project
-#   powershell -ExecutionPolicy Bypass -File C:\path\to\mnemo-code\scripts\mnemo_setup.ps1
+#   powershell -ExecutionPolicy Bypass -File C:\path\to\monet-code\scripts\mnemo_setup.ps1
 #
 # Options:
 #   -Remove    Remove mnemo from the current project
@@ -100,11 +100,36 @@ if (Test-Path $TargetClaude) {
         Get-Content $MnemoInstructions | Add-Content $TargetClaude
         Write-Host "  Appended mnemo instructions to CLAUDE.md"
     } else {
-        Write-Host "  CLAUDE.md already contains mnemo instructions — skipped"
+        Write-Host "  CLAUDE.md already contains mnemo instructions - skipped"
     }
 } else {
     Copy-Item $MnemoInstructions $TargetClaude
     Write-Host "  Created CLAUDE.md with mnemo instructions"
+}
+
+# Bootstrap tree from codebase
+Write-Host "  Scanning codebase to bootstrap tree..."
+$TempPy = Join-Path $env:TEMP "mnemo_bootstrap.py"
+$PyLines = [System.Collections.Generic.List[string]]::new()
+$PyLines.Add('import sys')
+$PyLines.Add('sys.path.insert(0, r"' + $MnemoSrc + '")')
+$PyLines.Add('from pathlib import Path')
+$PyLines.Add('from mnemo import Store')
+$PyLines.Add('from mnemo_scan import scan')
+$PyLines.Add('store = Store(r"' + $StorePath + '")')
+$PyLines.Add('result = scan(".", store, project_root=Path(r"' + $ProjectDir + '"))')
+$PyLines.Add('n_files = result["files_scanned"]')
+$PyLines.Add('n_claims = result["claims_created"]')
+$PyLines.Add('print("  Scanned " + str(n_files) + " files, " + str(n_claims) + " claims created.")')
+[System.IO.File]::WriteAllLines($TempPy, $PyLines)
+try {
+    $env:MNEMO_STORE = $StorePath
+    $env:MNEMO_PROJECT_ROOT = $ProjectDir
+    uv run --with fastmcp --directory "$MnemoSrc" python $TempPy 2>&1
+} catch {
+    Write-Host "  (scan skipped - run memory_scan('.') from Claude to bootstrap later)"
+} finally {
+    Remove-Item $TempPy -ErrorAction SilentlyContinue
 }
 
 Write-Host ""
@@ -114,3 +139,4 @@ Write-Host "What happens next:"
 Write-Host "  - Every turn, Claude calls memory_recall automatically"
 Write-Host "  - Project knowledge accumulates in .mnemo/"
 Write-Host "  - Session handoffs preserve continuity across restarts"
+Write-Host "  - Tree is pre-seeded with codebase structure from AST scan"

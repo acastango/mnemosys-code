@@ -4,7 +4,7 @@
 #
 # Usage:
 #   cd /path/to/your/project
-#   bash /path/to/mnemo-code/scripts/mnemo_setup.sh
+#   bash /path/to/monet-code/scripts/mnemo_setup.sh
 #
 # Options:
 #   --remove    Remove mnemo from the current project
@@ -107,6 +107,21 @@ else
     echo "  Created CLAUDE.md with mnemo instructions"
 fi
 
+# Bootstrap tree from codebase
+echo "  Scanning codebase to bootstrap tree..."
+uv run --with fastmcp --directory "$MNEMO_SRC" python -c "
+import sys; sys.path.insert(0, '$MNEMO_SRC')
+from pathlib import Path
+from mnemo import Store
+from mnemo_scan import scan
+import os
+os.environ.setdefault('MNEMO_STORE', '$STORE_PATH')
+os.environ.setdefault('MNEMO_PROJECT_ROOT', '$PROJECT_DIR')
+store = Store('$STORE_PATH')
+result = scan('.', store, project_root=Path('$PROJECT_DIR'))
+print(f'  Scanned {result[\"files_scanned\"]} files, {result[\"claims_created\"]} claims created.')
+" 2>&1 || echo "  (scan skipped — run memory_scan(\".\") from Claude to bootstrap later)"
+
 echo ""
 echo "Done. mnemo is now active for $PROJECT_NAME."
 echo ""
@@ -114,3 +129,4 @@ echo "What happens next:"
 echo "  - Every turn, Claude calls memory_recall automatically"
 echo "  - Project knowledge accumulates in .mnemo/"
 echo "  - Session handoffs preserve continuity across restarts"
+echo "  - Tree is pre-seeded with codebase structure from AST scan"

@@ -2094,6 +2094,101 @@ def memory_scan(path: str = ".", extensions: str = "",
 
 
 @mcp.tool()
+def memory_pipeline(name: str, steps: list, description: str = "") -> str:
+    """
+    Define a reusable memory pipeline and store it as a node in the tree.
+
+    A pipeline is a sequence of steps that transform a node set. Each step
+    has an 'op' field and op-specific parameters. Variables in string
+    parameters ({varname}) are resolved at run time from the params passed
+    to memory_run.
+
+    Available ops:
+      Sources (ignore current set):
+        recall(query, max_nodes=8)       - associative recall
+        search(query, max_nodes=8)       - TF-IDF search
+        active(domain?)                  - all active nodes
+        spatial(file)                    - nodes anchored to a file
+
+      Transforms (node set -> node set):
+        traverse(depth=2, rel_types?, direction="both")
+        filter(domain?, min_priority?, min_confidence?, has_anchors?, type?)
+        sort(by="created"|"priority"|"confidence", reverse=True)
+        limit(n=10)
+        dedupe()
+
+      Sinks (side effects, pass through):
+        compress(label, domain="context") - compress set into summary node
+        claim(content, domain="context", priority=0)
+        link(target, rel="relates_to")
+
+    Example:
+        memory_pipeline("my-orient", [
+            {"op": "recall", "query": "{input}"},
+            {"op": "traverse", "depth": 1},
+            {"op": "compress", "label": "context: {input}"}
+        ])
+    """
+    from mnemo_pipeline import define_pipeline
+    addr = define_pipeline(name, steps, store, description=description)
+    emit("pipeline", "conscious", f"defined pipeline '{name}' ({len(steps)} steps)",
+         detail={"name": name, "addr": addr})
+    return f"Pipeline '{name}' stored at {addr} ({len(steps)} steps)."
+
+
+@mcp.tool()
+def memory_run(name: str, params: dict = None) -> str:
+    """
+    Run a named pipeline against the project store.
+
+    Built-in pipelines:
+      session-orient   recall + traverse + compress for a topic
+      file-context     surface all tree knowledge for a file
+      issue-cluster    compress all known issues into a summary
+      drift-check      find nodes with potentially stale anchors
+
+    Args:
+        name:   Pipeline name or address prefix
+        params: Variables to substitute into {varname} step parameters
+                e.g. {"input": "authentication"}
+    """
+    from mnemo_pipeline import get_pipeline, run_pipeline, render_result
+    pipeline_def = get_pipeline(name, store)
+    if not pipeline_def:
+        return f"Pipeline '{name}' not found. Use memory_pipelines() to list available."
+
+    p = params or {}
+    result = run_pipeline(pipeline_def, store, params=p)
+
+    emit("pipeline_run", "conscious",
+         f"ran pipeline '{name}': {result['steps_run']} steps, {len(result['nodes'])} nodes",
+         detail={"name": name, "params": p, "errors": result["errors"]})
+
+    return render_result(result)
+
+
+@mcp.tool()
+def memory_pipelines() -> str:
+    """
+    List all available pipelines: built-ins and stored.
+    """
+    from mnemo_pipeline import list_pipelines
+    pipelines = list_pipelines(store)
+    if not pipelines:
+        return "No pipelines defined."
+
+    lines = [f"{len(pipelines)} pipeline(s) available:\n"]
+    for p in pipelines:
+        src = p["source"]
+        addr = f"  {p['addr'][:8]}" if p.get("addr") else ""
+        lines.append(f"  {p['name']}  [{src}]{addr}")
+        if p.get("description"):
+            lines.append(f"    {p['description']}")
+        lines.append(f"    {p['steps_count']} step(s)")
+    return "\n".join(lines)
+
+
+@mcp.tool()
 def memory_coverage(path: str = ".", extensions: str = "") -> str:
     """
     Anchor coverage report: what percentage of this codebase has

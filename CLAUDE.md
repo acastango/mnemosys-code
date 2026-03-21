@@ -42,6 +42,8 @@ mnemo_coverage.py  Coverage scoring — how well the tree describes the codebase
 mnemo_map.py       Codebase cartography — section detection, file walk, structure mapping
 mnemo_graph.py     Explicit link-graph traversal — BFS from a node, renders subgraph; used by memory_graph tool
 mnemo_scan.py      Static codebase scanner — AST docstring extraction → tree claims, no LLM, idempotent via scan_index.json
+mnemo_pipeline.py  Composable memory pipelines — define/run/list pipelines as first-class nodes; built-ins: session-orient, file-context, issue-cluster, drift-check
+mnemo_cli.py       CLI entry point — mnemo install (global MCP), mnemo init (per-project), mnemo serve (stdio server)
 mnemo_verify.py    Verification anchors — pins claims to code via file/grep/dependency checks
 mnemo_log.py       Structured event emitter — writes JSON Lines to memory.log
 mnemo_sidecar.py   Live sidecar UI — tails memory.log, renders in terminal via Rich
@@ -197,6 +199,9 @@ Layers:
 | `memory_plan` | conscious | Tree-aware planning context — architecture, constraints, risks, state, affected files, blockers |
 | `memory_map` | conscious | Codebase cartography — structure overview with tree coverage |
 | `memory_scan` | conscious | Static AST scan — extracts docstrings/signatures into tree claims, no LLM, idempotent |
+| `memory_pipeline` | conscious | Define a reusable pipeline as a node — stored, addressed, supersedable |
+| `memory_run` | conscious | Run a named pipeline: built-ins (session-orient, file-context, issue-cluster, drift-check) or stored |
+| `memory_pipelines` | conscious | List all available pipelines — built-ins and stored |
 | `memory_coverage` | conscious | Coverage report — how well the tree describes the codebase |
 | `memory_infer` | system | Passive pattern inference from session logs — 5 layers: co-occurrence, recall, corrections, sequences, workflow |
 | `memory_arc` | conscious | Work arcs — create, update, complete, pause, list, detect multi-session goals |
