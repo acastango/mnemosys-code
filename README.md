@@ -1,12 +1,14 @@
 # monet-code
 
-Persistent memory for Claude Code. Gives Claude a content-addressed knowledge tree that survives context resets — so it stops rediscovering why your code is structured the way it is.
+Persistent, content-addressed memory for Claude Code. Every decision, convention, and discovered fact gets stored in a Merkle-structured tree that survives context resets — so Claude stops rediscovering why your code is structured the way it is.
+
+Named after Moneta, Roman goddess of memory. Runs entirely local.
 
 ---
 
 ## The problem
 
-Every time Claude Code starts a new session, it starts from scratch. It re-reads the same files, re-infers the same patterns, and re-makes the same mistakes. Architecture decisions, conventions, known gotchas, current work state — all of it evaporates at context end.
+Every time Claude Code starts a new session, it starts from scratch. It re-reads the same files, re-infers the same patterns, re-makes the same mistakes. Architecture decisions, conventions, known bugs, current work state — all of it evaporates at context end.
 
 monet-code captures this knowledge in a persistent tree and surfaces it automatically, every turn. Claude walks into each session already oriented.
 
@@ -19,7 +21,7 @@ monet-code captures this knowledge in a persistent tree and surfaces it automati
 ```bash
 pip install monet-code
 
-# Register with Claude Code (once, globally)
+# Register with Claude Code once, globally
 mnemo install
 
 # Initialize a project
@@ -29,82 +31,95 @@ mnemo init
 
 `mnemo init`:
 - Creates `.mnemo/` in your project (gitignored automatically)
-- Writes mnemo instructions into `CLAUDE.md`
-- Runs a static AST scan to bootstrap the tree from your existing codebase
+- Injects memory instructions into `CLAUDE.md`
+- Runs a static AST scan to bootstrap the tree from your existing codebase — new sessions start with structural knowledge already in place
 
-The MCP server auto-detects the store by walking up from the working directory — no per-project configuration needed after `mnemo init`.
+The MCP server auto-detects the store by walking up from the working directory. No per-project configuration needed after `mnemo init`.
+
+---
+
+## Architecture
+
+### Content-addressed Merkle tree
+
+monet-code is not a vector database or a summary buffer. It's a filesystem for memory.
+
+Every node is addressed by `SHA-256(type + content + inputs)` — immutable, deduplicated, and verifiable. Nothing is ever deleted. Superseded claims stay addressable. The active set is the current source of truth, but the full provenance chain is always intact.
+
+```
+leaf        Raw claim — ground truth, never modified
+compress    Summary of N inputs — lossy content, lossless provenance
+supersede   Replaces a prior claim — old stays addressable
+root        Snapshot of the entire active set at a point in time
+```
+
+### Memory layers
+
+```
+MESSAGE IN
+   │
+   ├─► subconscious   memory_recall fires every turn — ambient surfacing
+   │
+   └─► conscious      memory_claim, memory_update, memory_link — deliberate storage
+```
+
+### Chains
+
+Chains are ordered sequences of nodes — reasoning trails. A chain records not just *what* was concluded but *how*: what was recalled, what was discovered, what was compressed. Sessions build chains automatically. Chains can be promoted, stashed, rendered as narratives, and used as the basis for reusable pipelines.
+
+### Pipelines
+
+Pipelines are composable sequences of memory operations, stored as first-class nodes in the tree. The runner is pure Python — no LLM in the loop. Built-ins:
+
+| Pipeline | Steps | Use |
+|----------|-------|-----|
+| `session-orient` | recall → traverse → filter → compress | Orient a new session |
+| `file-context` | spatial → traverse → dedupe | Surface knowledge for a file |
+| `issue-cluster` | active(issues) → dedupe → compress | Cluster known bugs |
+| `drift-check` | active → filter(anchored) → dedupe | Find stale claims |
 
 ---
 
 ## How it works
 
-monet-code runs as an MCP server alongside Claude Code. On every turn:
+On every turn:
 
-1. `memory_recall` fires automatically — surfaces relevant nodes from the project tree
-2. Claude reads, writes, and edits through mnemo's filesystem tools — every file operation auto-claims itself in the tree
-3. Explicitly learned facts get stored with `memory_claim`
-4. Sessions compress into handoff nodes — the next instance picks up where the last one stopped
-
-Knowledge is content-addressed: nodes are SHA-256 hashed, superseded nodes stay addressable, and the active set is always the current source of truth.
+1. `memory_recall` fires — surfaces relevant nodes via TF-IDF + domain boosts + link traversal
+2. File operations go through monet-code's filesystem tools — reads, writes, and edits auto-claim themselves in the tree with content-hash anchors
+3. Discoveries get stored explicitly with `memory_claim`
+4. At session end, work compresses into a handoff node — the next instance picks up where the last stopped
 
 ---
 
-## Usage
-
-Once running, monet-code works automatically. Key tools:
+## Key tools
 
 ```
-# What does the tree know about this project?
-memory_soul()
+# Orientation
+memory_soul()                          # full project knowledge document
+memory_diff()                          # what changed since the last root
+memory_status()                        # active node count, domain breakdown
 
-# What changed since the last session?
-memory_diff()
-
-# Store a decision
-memory_claim("We use optimistic locking — see db/lock.py", domain="decisions")
-
-# Find something
+# Knowledge
+memory_claim("...", domain="decisions")
+memory_update(addr, "new content")     # supersede a stale claim
 memory_search("authentication flow")
+memory_graph(addr, depth=2)            # traverse the link graph
 
-# Bootstrap tree from existing codebase
-memory_scan(".")
+# Codebase
+memory_scan(".")                       # bootstrap tree from AST (no LLM)
+memory_explore(".")                    # reasoning trace: recall → locate → gaps
+memory_read("src/file.c")             # tree-annotated file reading
+memory_coverage(".")                   # how much of the codebase has tree coverage
 
-# Run a pipeline
-memory_run("session-orient", params={"input": "collision detection"})
-memory_run("file-context",   params={"input": "src/physics.c"})
-```
+# Pipelines
+memory_pipelines()
+memory_run("session-orient", params={"input": "collision system"})
+memory_pipeline("name", steps)         # define and store a custom pipeline
 
----
-
-## Pipelines
-
-Pipelines are composable, reusable sequences of memory operations — stored as nodes in the tree, addressable and supersedable like any other knowledge.
-
-```
-memory_pipelines()           # list available pipelines
-memory_run("name", params)   # run a pipeline
-memory_pipeline("name", steps, description)  # define a custom pipeline
-```
-
-Built-in pipelines:
-
-| Pipeline | Steps | Use |
-|----------|-------|-----|
-| `session-orient` | recall → traverse → filter → compress | Orient a new session to a topic |
-| `file-context` | spatial → traverse → dedupe | Surface all tree knowledge for a file |
-| `issue-cluster` | active(issues) → dedupe → compress | Cluster known bugs into a summary |
-| `drift-check` | active → filter(anchored) → dedupe | Find potentially stale claims |
-
-Custom pipelines can be defined and stored in the tree:
-
-```python
-memory_pipeline("my-workflow", [
-    {"op": "recall",   "query": "{input}"},
-    {"op": "traverse", "depth": 2},
-    {"op": "filter",   "domain": "architecture"},
-    {"op": "compress", "label": "context: {input}"}
-])
-memory_run("my-workflow", params={"input": "auth system"})
+# Chains
+memory_chains()                        # list chains
+memory_cat(chain_id)                   # render chain as narrative
+memory_arc("goal description")         # track a multi-session work arc
 ```
 
 ---
@@ -126,7 +141,7 @@ Add to `~/.claude/settings.json` under `hooks.PreToolUse`:
 
 ### Sidecar UI
 
-Live terminal view of monet-code activity — tails the event log and renders with Rich.
+Live terminal view of monet-code activity.
 
 ```bash
 pip install monet-code[sidecar]
@@ -149,14 +164,15 @@ uvicorn mnemo_web:app --reload
 
 ```
 <project>/.mnemo/
-├── nodes/              Content-addressed JSON files
+├── nodes/              Content-addressed JSON files (addr = 12-char SHA-256)
 ├── active.json         Currently active node addresses
-├── chains.json         Chain metadata (ordered reasoning sequences)
+├── chains.json         Chain metadata — stable ch_<12hex> IDs
 ├── roots.json          Project knowledge snapshots
 ├── index/              TF-IDF and embedding indices
+├── session_state.json  Session cycle state
 └── logs/               Session event logs (JSON Lines)
 
-~/.mnemo/global/        Cross-project store — user preferences, general conventions
+~/.mnemo/global/        Cross-project store — preferences, general conventions
 ```
 
 `.mnemo/` is gitignored by default. Knowledge stays local to your machine.
@@ -171,6 +187,7 @@ uvicorn mnemo_web:app --reload
 | `MNEMO_GLOBAL` | `~/.mnemo/global` | Global store path |
 | `MNEMO_RETRIEVAL` | `tfidf` | Retrieval backend: `tfidf` or `embedding` |
 | `MNEMO_EMBEDDING_PROVIDER` | `auto` | `voyage`, `openai`, or `auto` |
+| `MNEMO_COMPRESS_INTERVAL` | `15` | Turns between auto-compression |
 | `MNEMO_SMALL_MODEL` | `claude-haiku-4-5-20251001` | Model for background operations |
 | `MNEMO_PROJECT_ROOT` | git root / CWD | Root for file anchor resolution |
 | `ANTHROPIC_API_KEY` | — | Required for Haiku-based operations |
