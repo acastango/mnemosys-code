@@ -1,4 +1,4 @@
-!!! Have just been made aware there already exists an AI memory tool with the name "mnemo" - name change incoming, sorry.
+
 
 # mnemo
 
