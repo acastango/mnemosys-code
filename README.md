@@ -1,4 +1,4 @@
-# monet-code
+# monet-code 
 
 Persistent, content-addressed memory for Claude Code. Every decision, convention, and discovered fact gets stored in a Merkle-structured tree that survives context resets — so Claude stops rediscovering why your code is structured the way it is.
 
