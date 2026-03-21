@@ -37,6 +37,13 @@ mnemo init
 
 The MCP server auto-detects the store by walking up from the working directory. No per-project configuration needed after `mnemo init`.
 
+```
+mnemo install   Register MCP server globally + install recall hooks
+mnemo init      Initialize a project (run once per repo)
+mnemo serve     Start the MCP server (called internally by Claude Code)
+mnemo hook      Run the proactive recall hook (called by Claude Code hooks)
+```
+
 ---
 
 ## Architecture
@@ -79,6 +86,8 @@ Pipelines are composable sequences of memory operations, stored as first-class n
 | `issue-cluster` | active(issues) → dedupe → compress | Cluster known bugs |
 | `drift-check` | active → filter(anchored) → dedupe | Find stale claims |
 
+When a methodology works, `memory_learn` extracts it from a successful chain and stores it as a reusable pipeline — so the approach that solved the problem becomes available for next time.
+
 ---
 
 ## How it works
@@ -86,9 +95,10 @@ Pipelines are composable sequences of memory operations, stored as first-class n
 On every turn:
 
 1. `memory_recall` fires — surfaces relevant nodes via TF-IDF + domain boosts + link traversal
-2. File operations go through monet-code's filesystem tools — reads, writes, and edits auto-claim themselves in the tree with content-hash anchors
-3. Discoveries get stored explicitly with `memory_claim`
-4. At session end, work compresses into a handoff node — the next instance picks up where the last stopped
+2. The proactive hook injects tree context before every file edit — zero API calls, ~10ms
+3. File operations go through monet-code's filesystem tools — reads, writes, and edits auto-claim themselves in the tree with content-hash anchors
+4. Discoveries get stored explicitly with `memory_claim`
+5. At session end, work compresses into a handoff node — the next instance picks up where the last stopped
 
 ---
 
@@ -116,6 +126,7 @@ memory_coverage(".")                   # how much of the codebase has tree cover
 memory_pipelines()
 memory_run("session-orient", params={"input": "collision system"})
 memory_pipeline("name", steps)         # define and store a custom pipeline
+memory_learn(chain_id, "name")         # extract a reusable pipeline from a successful chain
 
 # Chains
 memory_chains()                        # list chains
@@ -125,20 +136,7 @@ memory_arc("goal description")         # track a multi-session work arc
 
 ---
 
-## Optional tools
-
-### Proactive recall hook
-
-Injects memory context before every Edit/Write — zero API calls, ~10ms. Installed automatically by `mnemo install`.
-
-To add manually, under `hooks.PreToolUse` in `~/.claude/settings.json`:
-
-```json
-{
-  "matcher": "Edit|Write",
-  "hooks": [{ "type": "command", "command": "mnemo hook" }]
-}
-```
+## Extras
 
 ### Sidecar UI
 
