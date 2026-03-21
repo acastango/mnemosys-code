@@ -435,6 +435,136 @@ def list_pipelines(store: Store) -> list[dict]:
     return result
 
 
+def learn_from_chain(chain_id: str, store: Store, name: str = "") -> dict | None:
+    """
+    Extract a reusable pipeline pattern from a chain.
+
+    Analyzes the sequence of nodes in the chain and infers what operations
+    produced them based on node metadata. Produces a pipeline definition
+    that captures the shape of the work — not the specific content, but
+    the methodology.
+
+    Inference rules (in order of application):
+      - Nodes with recall_count > 0 or source="subconscious" → recall step
+      - Nodes with links to others / traversal evidence             → traverse step
+      - Majority domain across chain                               → filter step
+      - Compress node near end                                     → compress step
+      - Explicit claims (source="conscious", no anchors)          → claim pattern noted
+      - Content-hash anchored nodes                               → spatial/file step
+
+    Returns a pipeline def dict (not stored — caller decides whether to store it).
+    Returns None if chain not found or has fewer than 2 nodes.
+    """
+    from mnemo_chains import get_chain
+    from collections import Counter
+
+    chain = get_chain(store, chain_id)
+    if not chain:
+        # Try prefix match
+        all_chains = store.root / "chains.json"
+        if all_chains.exists():
+            import json
+            data = json.loads(all_chains.read_text(encoding="utf-8"))
+            for cid in data:
+                if cid.startswith(chain_id):
+                    chain = data[cid]
+                    chain_id = cid
+                    break
+    if not chain:
+        return None
+
+    members = chain.get("members", [])
+    if len(members) < 2:
+        return None
+
+    nodes = [store.get(addr) for addr in members]
+    nodes = [n for n in nodes if n is not None]
+    if not nodes:
+        return None
+
+    steps: list[dict] = []
+
+    # ── Source step ──────────────────────────────────────────────────
+    # Detect recalled nodes at the start (subconscious surfacing)
+    recalled = [n for n in nodes[:3]
+                if n.meta.get("recall_count", 0) > 0
+                or n.meta.get("source") == "subconscious"]
+    if recalled:
+        steps.append({"op": "recall", "query": "{input}", "max_nodes": 10})
+    else:
+        # Check for file-anchored nodes at the start → spatial source
+        file_anchored = [n for n in nodes[:3]
+                         if any(a.get("type") == "content_hash"
+                                for a in n.meta.get("anchors", []))]
+        if file_anchored:
+            anchor = file_anchored[0].meta["anchors"][0]
+            steps.append({"op": "spatial", "file": anchor.get("file", "{input}")})
+        else:
+            steps.append({"op": "recall", "query": "{input}", "max_nodes": 10})
+
+    # ── Traversal ────────────────────────────────────────────────────
+    # If nodes have links or chain spans multiple domains, traversal was likely used
+    linked_nodes = [n for n in nodes if n.meta.get("links")]
+    domain_spread = len({n.meta.get("domain") for n in nodes if n.meta.get("domain")})
+    if linked_nodes or domain_spread > 1:
+        steps.append({"op": "traverse", "depth": 1})
+
+    # ── Domain filter ────────────────────────────────────────────────
+    domains = [n.meta.get("domain") for n in nodes if n.meta.get("domain")]
+    if domains:
+        top_domain, top_count = Counter(domains).most_common(1)[0]
+        # Only add filter if one domain clearly dominates (>50%)
+        if top_count > len(nodes) * 0.5 and domain_spread > 1:
+            steps.append({"op": "filter", "domain": top_domain})
+
+    # ── Dedupe ───────────────────────────────────────────────────────
+    steps.append({"op": "dedupe"})
+
+    # ── Sink ─────────────────────────────────────────────────────────
+    # Compress node near the end → compress step
+    has_compress = any(n.type == "compress" for n in nodes[-3:])
+    if has_compress:
+        chain_summary = chain.get("summary", "")
+        label = f"learned: {chain_summary[:40]}" if chain_summary else "learned: {input}"
+        steps.append({"op": "compress", "label": label})
+
+    # ── Build result ─────────────────────────────────────────────────
+    chain_summary = chain.get("summary", chain_id)
+    pipeline_name = name or f"learned-{chain_id[:8]}"
+    description = (
+        f"Learned from chain {chain_id[:8]}: {chain_summary[:80]}"
+        if chain_summary else f"Learned from chain {chain_id[:8]}"
+    )
+
+    return {
+        "name":        pipeline_name,
+        "description": description,
+        "steps":       steps,
+        "learned_from": chain_id,
+    }
+
+
+def render_learned(pipeline_def: dict) -> str:
+    """Render a learned pipeline definition for display."""
+    name = pipeline_def["name"]
+    desc = pipeline_def.get("description", "")
+    steps = pipeline_def.get("steps", [])
+    source = pipeline_def.get("learned_from", "")
+
+    lines = [f"Learned pipeline: '{name}'"]
+    if desc:
+        lines.append(f"  {desc}")
+    lines.append(f"\nSteps ({len(steps)}):")
+    for i, step in enumerate(steps, 1):
+        op = step["op"]
+        params = {k: v for k, v in step.items() if k != "op"}
+        param_str = "  " + ", ".join(f"{k}={v!r}" for k, v in params.items()) if params else ""
+        lines.append(f"  {i}. {op}{param_str}")
+    lines.append(f"\nTo store: memory_pipeline({name!r}, steps)")
+    lines.append(f"To run:   memory_run({name!r}, params={{\"input\": \"...\"}})")
+    return "\n".join(lines)
+
+
 def render_result(result: dict) -> str:
     """Render a pipeline run result as a readable string."""
     name = result["name"]

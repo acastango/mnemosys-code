@@ -2189,6 +2189,57 @@ def memory_pipelines() -> str:
 
 
 @mcp.tool()
+def memory_learn(chain_id: str, name: str = "", store_pipeline: bool = True) -> str:
+    """
+    Extract a reusable pipeline from a successful chain.
+
+    Analyzes the sequence of nodes in the chain and infers what operations
+    produced them — recall patterns, traversal, domain clustering, compression.
+    Produces a pipeline that captures the methodology, not the content.
+
+    The learned pipeline can be run immediately with memory_run() using
+    {input} as the variable for the topic or file.
+
+    Args:
+        chain_id:       Chain ID (ch_...) or address prefix
+        name:           Name for the extracted pipeline (default: learned-<chain_id>)
+        store_pipeline: Store the pipeline as a node in the tree (default: True)
+    """
+    from mnemo_pipeline import learn_from_chain, define_pipeline, render_learned
+
+    pipeline_def = learn_from_chain(chain_id, store, name=name)
+    if not pipeline_def:
+        return f"Chain '{chain_id}' not found or too short to extract a pattern."
+
+    addr = None
+    if store_pipeline:
+        addr = define_pipeline(
+            pipeline_def["name"],
+            pipeline_def["steps"],
+            store,
+            description=pipeline_def.get("description", ""),
+        )
+        # Link pipeline node back to the chain's head node
+        from mnemo_chains import get_chain
+        chain = get_chain(store, chain_id)
+        if chain and chain.get("head") and addr:
+            head_node = store.get(chain["head"])
+            if head_node:
+                links = head_node.meta.setdefault("links", [])
+                links.append({"addr": addr, "rel": "enables"})
+                store.put(head_node)
+
+    emit("learn", "conscious",
+         f"learned pipeline '{pipeline_def['name']}' from chain {chain_id[:8]}",
+         detail={"chain_id": chain_id, "steps": len(pipeline_def["steps"]), "addr": addr})
+
+    result = render_learned(pipeline_def)
+    if addr:
+        result += f"\n\nStored at {addr[:8]}."
+    return result
+
+
+@mcp.tool()
 def memory_coverage(path: str = ".", extensions: str = "") -> str:
     """
     Anchor coverage report: what percentage of this codebase has

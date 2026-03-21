@@ -202,6 +202,7 @@ Layers:
 | `memory_pipeline` | conscious | Define a reusable pipeline as a node — stored, addressed, supersedable |
 | `memory_run` | conscious | Run a named pipeline: built-ins (session-orient, file-context, issue-cluster, drift-check) or stored |
 | `memory_pipelines` | conscious | List all available pipelines — built-ins and stored |
+| `memory_learn` | conscious | Extract a reusable pipeline from a successful chain — learns methodology from what worked |
 | `memory_coverage` | conscious | Coverage report — how well the tree describes the codebase |
 | `memory_infer` | system | Passive pattern inference from session logs — 5 layers: co-occurrence, recall, corrections, sequences, workflow |
 | `memory_arc` | conscious | Work arcs — create, update, complete, pause, list, detect multi-session goals |
