@@ -1,5 +1,5 @@
 """
-mnemo_pipeline.py - Composable memory pipelines
+mnemo_pipeline.py - Composable memory pipelines and vectors
 
 Pipelines are first-class nodes in the tree: stored, addressed,
 supersedable, and recallable like any other knowledge.
@@ -10,17 +10,27 @@ Sinks produce side effects and pass the set through unchanged.
 No LLM in the loop - execution is pure Python over the store.
 
 Step ops:
-  Sources:   recall, search, active, spatial
+  Sources:    recall, search, active, spatial, pipe (passthrough)
   Transforms: traverse, filter, sort, limit, dedupe
-  Sinks:     compress, claim, link
+  Sinks:      compress, claim, link
+
+Vectors are compositions of multiple pipelines (type="vector"):
+  components: list of {pipeline, params} — run as fan-out or chain
+  merge:      dedupe | union | intersect | ranked | sequential
+  post:       optional pipeline steps applied to the merged result
+
+sequential merge threads each component's output into the next.
+All other merges run components independently and combine results.
 
 Variables: {varname} in any string parameter, resolved from
-the params dict passed to run_pipeline().
+the params dict passed to run_pipeline() / run_vector().
 
 MCP surface (in mnemo_mcp.py):
-  memory_pipeline(name, steps, description?)  - define + store
-  memory_run(name_or_addr, **params)          - invoke
-  memory_pipelines()                          - list defined
+  memory_pipeline(name, steps, description?)              - define pipeline
+  memory_vector(name, components, merge, post, desc?)     - define vector
+  memory_run(name_or_addr, params?)                       - invoke either
+  memory_pipelines()                                      - list pipelines
+  memory_vectors()                                        - list vectors
 """
 
 from __future__ import annotations
@@ -96,6 +106,13 @@ def _interp_step(step: dict, ctx: dict) -> dict:
 # ───────────────────────────────────────────────────────────────────
 # Step implementations
 # ───────────────────────────────────────────────────────────────────
+
+def _op_pipe(step: dict, current: list[Node], _store: Store) -> list[Node]:
+    """Passthrough source — passes current node set through unchanged.
+    Used as the first step in a pipeline that receives upstream output
+    from sequential vector composition."""
+    return current
+
 
 def _op_recall(step: dict, _current: list[Node], store: Store) -> list[Node]:
     from mnemo_associate import retrieve_relevant
@@ -274,6 +291,7 @@ def _op_link(step: dict, current: list[Node], store: Store) -> list[Node]:
 
 
 _OPS = {
+    "pipe":     _op_pipe,
     "recall":   _op_recall,
     "search":   _op_search,
     "active":   _op_active,
@@ -293,14 +311,17 @@ _OPS = {
 # Runner
 # ───────────────────────────────────────────────────────────────────
 
-def run_pipeline(pipeline_def: dict, store: Store, params: dict | None = None) -> dict:
+def run_pipeline(pipeline_def: dict, store: Store, params: dict | None = None,
+                 initial_nodes: list[Node] | None = None) -> dict:
     """
     Execute a pipeline definition against the store.
 
     Args:
-        pipeline_def: dict with "steps" list and optional "name"
-        store:        the node store
-        params:       variable substitutions for {varname} in steps
+        pipeline_def:  dict with "steps" list and optional "name"
+        store:         the node store
+        params:        variable substitutions for {varname} in steps
+        initial_nodes: seed the node set before step 1 (used by sequential
+                       vector composition to thread output between components)
 
     Returns:
         {
@@ -313,7 +334,7 @@ def run_pipeline(pipeline_def: dict, store: Store, params: dict | None = None) -
     ctx = params or {}
     steps = pipeline_def.get("steps", [])
     name = pipeline_def.get("name", "unnamed")
-    current: list[Node] = []
+    current: list[Node] = list(initial_nodes) if initial_nodes else []
     errors: list[str] = []
 
     for i, step in enumerate(steps):
@@ -562,6 +583,240 @@ def render_learned(pipeline_def: dict) -> str:
         lines.append(f"  {i}. {op}{param_str}")
     lines.append(f"\nTo store: memory_pipeline({name!r}, steps)")
     lines.append(f"To run:   memory_run({name!r}, params={{\"input\": \"...\"}})")
+    return "\n".join(lines)
+
+
+# ───────────────────────────────────────────────────────────────────
+# Vector merge strategies
+# ───────────────────────────────────────────────────────────────────
+
+def _merge_dedupe(component_results: list[list[Node]]) -> list[Node]:
+    """Union of all components, first-occurrence wins."""
+    seen: set[str] = set()
+    result = []
+    for nodes in component_results:
+        for n in nodes:
+            if n.addr not in seen:
+                seen.add(n.addr)
+                result.append(n)
+    return result
+
+
+def _merge_intersect(component_results: list[list[Node]]) -> list[Node]:
+    """Only nodes present in every component result."""
+    if not component_results:
+        return []
+    addr_sets = [set(n.addr for n in nodes) for nodes in component_results]
+    common = addr_sets[0].intersection(*addr_sets[1:])
+    return [n for n in component_results[0] if n.addr in common]
+
+
+def _merge_ranked(component_results: list[list[Node]]) -> list[Node]:
+    """Round-robin interleave: take one from each component in turn, dedupe."""
+    seen: set[str] = set()
+    result = []
+    max_len = max((len(r) for r in component_results), default=0)
+    for i in range(max_len):
+        for nodes in component_results:
+            if i < len(nodes):
+                n = nodes[i]
+                if n.addr not in seen:
+                    seen.add(n.addr)
+                    result.append(n)
+    return result
+
+
+_MERGE_FNS = {
+    "dedupe":    _merge_dedupe,
+    "union":     _merge_dedupe,   # alias
+    "intersect": _merge_intersect,
+    "ranked":    _merge_ranked,
+}
+
+
+# ───────────────────────────────────────────────────────────────────
+# Vector runner
+# ───────────────────────────────────────────────────────────────────
+
+def run_vector(vector_def: dict, store: Store, params: dict | None = None) -> dict:
+    """
+    Execute a vector: run N pipelines, merge results, apply post steps.
+
+    merge="sequential" threads each component's output into the next —
+    the output of component i becomes initial_nodes for component i+1.
+    All other merge modes run components independently and combine results.
+
+    The "post" field is a list of pipeline steps applied to the merged
+    result after combining — same step schema as a regular pipeline.
+
+    Returns:
+        {
+          "nodes":           list[Node] — final merged + post-processed set
+          "component_count": int
+          "components_run":  int
+          "merge":           str
+          "errors":          list[str]
+          "name":            str
+        }
+    """
+    ctx = params or {}
+    components = vector_def.get("components", [])
+    merge = vector_def.get("merge", "dedupe")
+    post_steps = vector_def.get("post", [])
+    name = vector_def.get("name", "unnamed-vector")
+
+    errors: list[str] = []
+    component_results: list[list[Node]] = []
+
+    if merge == "sequential":
+        current_nodes: list[Node] = []
+        for i, comp in enumerate(components):
+            pipeline_name = comp.get("pipeline", "")
+            comp_params = {**ctx, **{k: _interp(v, ctx)
+                                     for k, v in comp.get("params", {}).items()}}
+            pipeline_def = get_pipeline(pipeline_name, store)
+            if pipeline_def is None:
+                errors.append(f"component {i}: pipeline '{pipeline_name}' not found")
+                continue
+            result = run_pipeline(pipeline_def, store, comp_params,
+                                  initial_nodes=current_nodes)
+            errors.extend(result["errors"])
+            current_nodes = result["nodes"]
+            component_results.append(current_nodes)
+        merged = current_nodes
+
+    else:
+        for i, comp in enumerate(components):
+            pipeline_name = comp.get("pipeline", "")
+            comp_params = {**ctx, **{k: _interp(v, ctx)
+                                     for k, v in comp.get("params", {}).items()}}
+            pipeline_def = get_pipeline(pipeline_name, store)
+            if pipeline_def is None:
+                errors.append(f"component {i}: pipeline '{pipeline_name}' not found")
+                component_results.append([])
+                continue
+            result = run_pipeline(pipeline_def, store, comp_params)
+            errors.extend(result["errors"])
+            component_results.append(result["nodes"])
+
+        merge_fn = _MERGE_FNS.get(merge, _merge_dedupe)
+        merged = merge_fn(component_results)
+
+    # Post-merge pipeline steps
+    if post_steps and merged:
+        post_def = {"name": f"{name}:post", "steps": post_steps}
+        post_result = run_pipeline(post_def, store, ctx, initial_nodes=merged)
+        errors.extend(post_result["errors"])
+        merged = post_result["nodes"]
+
+    return {
+        "nodes":           merged,
+        "component_count": len(components),
+        "components_run":  len(component_results),
+        "merge":           merge,
+        "errors":          errors,
+        "name":            name,
+    }
+
+
+# ───────────────────────────────────────────────────────────────────
+# Vector node management
+# ───────────────────────────────────────────────────────────────────
+
+def define_vector(name: str, components: list[dict], store: Store,
+                  merge: str = "dedupe", post: list[dict] | None = None,
+                  description: str = "") -> str:
+    """
+    Store a vector definition as a node in the tree.
+    Returns the node address.
+    """
+    content = description or f"vector: {name} ({len(components)} components, merge={merge})"
+    node = Node(
+        type="vector",
+        content=content,
+        meta={
+            "domain": "context",
+            "vector": {
+                "name":        name,
+                "components":  components,
+                "merge":       merge,
+                "post":        post or [],
+                "description": description,
+            },
+            "source": "pipeline",
+        },
+    )
+    store.put(node)
+    active = store.get_active()
+    active.add(node.addr)
+    store.set_active(active)
+    return node.addr
+
+
+def get_vector(name_or_addr: str, store: Store) -> dict | None:
+    """Look up a vector by name or address prefix. Returns the vector def or None."""
+    node = store.get(name_or_addr)
+    if node and node.type == "vector":
+        v = node.meta.get("vector", {})
+        v["name"] = v.get("name", name_or_addr)
+        return v
+
+    for addr in store.get_active():
+        node = store.get(addr)
+        if node and node.type == "vector":
+            v = node.meta.get("vector", {})
+            if v.get("name") == name_or_addr:
+                v["name"] = name_or_addr
+                return v
+
+    return None
+
+
+def list_vectors(store: Store) -> list[dict]:
+    """List all stored vectors."""
+    result = []
+    for addr in store.get_active():
+        node = store.get(addr)
+        if node and node.type == "vector":
+            v = node.meta.get("vector", {})
+            result.append({
+                "name":            v.get("name", addr[:8]),
+                "description":     v.get("description", node.content),
+                "component_count": len(v.get("components", [])),
+                "merge":           v.get("merge", "dedupe"),
+                "addr":            addr,
+            })
+    return result
+
+
+def render_vector_result(result: dict) -> str:
+    """Render a vector run result as a readable string."""
+    name = result["name"]
+    nodes = result["nodes"]
+    errors = result["errors"]
+    merge = result["merge"]
+    n_components = result["component_count"]
+    n_run = result["components_run"]
+
+    lines = [
+        f"Vector '{name}': {n_run}/{n_components} components, "
+        f"merge={merge}, {len(nodes)} node(s) in final set"
+    ]
+
+    if errors:
+        lines.append(f"\nErrors ({len(errors)}):")
+        for e in errors:
+            lines.append(f"  {e}")
+
+    if nodes:
+        lines.append(f"\nOutput nodes:")
+        for node in nodes[:10]:
+            domain = node.meta.get("domain", "?")
+            snippet = node.content[:100].replace("\n", " ")
+            lines.append(f"  [{domain}] {node.addr[:8]}  {snippet}")
+        if len(nodes) > 10:
+            lines.append(f"  ... and {len(nodes) - 10} more")
+
     return "\n".join(lines)
 
 

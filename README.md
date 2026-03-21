@@ -88,6 +88,30 @@ Pipelines are composable sequences of memory operations, stored as first-class n
 
 When a methodology works, `memory_learn` extracts it from a successful chain and stores it as a reusable pipeline — so the approach that solved the problem becomes available for next time.
 
+### Vectors
+
+Vectors are compositions of multiple pipelines — an abstraction above the pipeline abstraction. Each component pipeline contributes a dimension; the vector merges them into a single result.
+
+```
+memory_vector("full-orient", [
+    {"pipeline": "session-orient", "params": {"input": "{input}"}},
+    {"pipeline": "issue-cluster"},
+    {"pipeline": "drift-check"},
+], merge="ranked")
+```
+
+Merge strategies:
+
+| Merge | Behavior |
+|-------|----------|
+| `dedupe` | Union of all components, deduplicated (default) |
+| `union` | Alias for dedupe |
+| `intersect` | Only nodes present in every component |
+| `ranked` | Round-robin interleave — one from each component in turn |
+| `sequential` | Chain: output of component i feeds into component i+1 |
+
+Vectors can also have a `post` field — pipeline steps applied to the merged result after combining. `memory_run` dispatches on type, so pipelines and vectors share the same invocation interface.
+
 ---
 
 ## How it works
@@ -122,10 +146,13 @@ memory_explore(".")                    # reasoning trace: recall → locate → 
 memory_read("src/file.c")             # tree-annotated file reading
 memory_coverage(".")                   # how much of the codebase has tree coverage
 
-# Pipelines
+# Pipelines & Vectors
 memory_pipelines()
+memory_vectors()
 memory_run("session-orient", params={"input": "collision system"})
+memory_run("full-orient", params={"input": "collision system"})  # vector
 memory_pipeline("name", steps)         # define and store a custom pipeline
+memory_vector("name", components, merge="ranked")  # compose pipelines
 memory_learn(chain_id, "name")         # extract a reusable pipeline from a successful chain
 
 # Chains

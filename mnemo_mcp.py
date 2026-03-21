@@ -2139,7 +2139,7 @@ def memory_pipeline(name: str, steps: list, description: str = "") -> str:
 @mcp.tool()
 def memory_run(name: str, params: dict = None) -> str:
     """
-    Run a named pipeline against the project store.
+    Run a named pipeline or vector against the project store.
 
     Built-in pipelines:
       session-orient   recall + traverse + compress for a topic
@@ -2147,23 +2147,38 @@ def memory_run(name: str, params: dict = None) -> str:
       issue-cluster    compress all known issues into a summary
       drift-check      find nodes with potentially stale anchors
 
+    Vectors are compositions of multiple pipelines — use memory_vectors()
+    to list stored vectors.
+
     Args:
-        name:   Pipeline name or address prefix
+        name:   Pipeline or vector name, or address prefix
         params: Variables to substitute into {varname} step parameters
                 e.g. {"input": "authentication"}
     """
-    from mnemo_pipeline import get_pipeline, run_pipeline, render_result
+    from mnemo_pipeline import (get_pipeline, run_pipeline, render_result,
+                                get_vector, run_vector, render_vector_result)
+    p = params or {}
+
+    # Try vector first (vectors are stored nodes; pipelines include built-ins)
+    vector_def = get_vector(name, store)
+    if vector_def:
+        result = run_vector(vector_def, store, params=p)
+        emit("vector_run", "conscious",
+             f"ran vector '{name}': {result['components_run']} components, "
+             f"{len(result['nodes'])} nodes",
+             detail={"name": name, "merge": result["merge"],
+                     "params": p, "errors": result["errors"]})
+        return render_vector_result(result)
+
     pipeline_def = get_pipeline(name, store)
     if not pipeline_def:
-        return f"Pipeline '{name}' not found. Use memory_pipelines() to list available."
+        return (f"'{name}' not found. "
+                f"Use memory_pipelines() or memory_vectors() to list available.")
 
-    p = params or {}
     result = run_pipeline(pipeline_def, store, params=p)
-
     emit("pipeline_run", "conscious",
          f"ran pipeline '{name}': {result['steps_run']} steps, {len(result['nodes'])} nodes",
          detail={"name": name, "params": p, "errors": result["errors"]})
-
     return render_result(result)
 
 
@@ -2185,6 +2200,71 @@ def memory_pipelines() -> str:
         if p.get("description"):
             lines.append(f"    {p['description']}")
         lines.append(f"    {p['steps_count']} step(s)")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def memory_vector(name: str, components: list, merge: str = "dedupe",
+                  post: list = None, description: str = "") -> str:
+    """
+    Define a vector: a named composition of multiple pipelines.
+
+    A vector runs N pipelines and merges their outputs into a single
+    node set. Vectors are stored as first-class nodes in the tree —
+    addressed, supersedable, and recallable like any other knowledge.
+
+    Merge strategies:
+      dedupe      Union of all components, deduplicated (default)
+      union       Alias for dedupe
+      intersect   Only nodes present in every component result
+      ranked      Round-robin interleave — one from each component in turn
+      sequential  Chain: output of component i feeds into component i+1
+
+    For sequential merge, a component pipeline can start with
+    {"op": "pipe"} to explicitly receive upstream nodes as input.
+    Otherwise, source ops (recall, active, etc.) replace the incoming set.
+
+    The optional post list is a sequence of pipeline steps applied to
+    the merged result — same step schema as memory_pipeline.
+
+    Args:
+        name:        Unique name for this vector
+        components:  List of {pipeline: name, params?: {}} dicts
+        merge:       How to combine component outputs (see above)
+        post:        Pipeline steps to apply after merging (optional)
+        description: Human-readable description
+
+    Example — comprehensive session orientation:
+        memory_vector("full-orient", [
+            {"pipeline": "session-orient", "params": {"input": "{input}"}},
+            {"pipeline": "issue-cluster"},
+            {"pipeline": "drift-check"},
+        ], merge="ranked", post=[{"op": "limit", "n": 20}])
+    """
+    from mnemo_pipeline import define_vector
+    addr = define_vector(name, components, store,
+                         merge=merge, post=post or [], description=description)
+    n = len(components)
+    emit("vector", "conscious",
+         f"defined vector '{name}' ({n} components, merge={merge})",
+         detail={"name": name, "addr": addr, "merge": merge})
+    return f"Vector '{name}' stored: {addr[:8]}  ({n} components, merge={merge})"
+
+
+@mcp.tool()
+def memory_vectors() -> str:
+    """List all stored vectors."""
+    from mnemo_pipeline import list_vectors
+    vectors = list_vectors(store)
+    if not vectors:
+        return "No vectors defined. Use memory_vector() to create one."
+
+    lines = [f"{len(vectors)} vector(s) stored:\n"]
+    for v in vectors:
+        lines.append(f"  {v['name']}  [{v['addr'][:8]}]  merge={v['merge']}")
+        if v.get("description"):
+            lines.append(f"    {v['description']}")
+        lines.append(f"    {v['component_count']} component(s)")
     return "\n".join(lines)
 
 
