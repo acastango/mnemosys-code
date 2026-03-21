@@ -90,21 +90,24 @@ claude mcp add mnemo \
     -e MNEMO_PROJECT_ROOT="$PROJECT_DIR" \
     -- uv run --with fastmcp --directory "$MNEMO_SRC" fastmcp run mnemo_mcp.py
 
-# Inject mnemo instructions into the project's CLAUDE.md
+# Write .monet (monet-code instructions for Claude)
 MNEMO_INSTRUCTIONS="$MNEMO_SRC/CLAUDE_MNEMO.md"
-TARGET_CLAUDE="$PROJECT_DIR/CLAUDE.md"
+cp "$MNEMO_INSTRUCTIONS" "$PROJECT_DIR/.monet"
+echo "  Created .monet with monet-code instructions"
 
+# Add @.monet import to CLAUDE.md
+TARGET_CLAUDE="$PROJECT_DIR/CLAUDE.md"
 if [ -f "$TARGET_CLAUDE" ]; then
-    if ! grep -q "mnemo instructions" "$TARGET_CLAUDE" 2>/dev/null; then
+    if ! grep -q "@.monet" "$TARGET_CLAUDE" 2>/dev/null; then
         echo "" >> "$TARGET_CLAUDE"
-        cat "$MNEMO_INSTRUCTIONS" >> "$TARGET_CLAUDE"
-        echo "  Appended mnemo instructions to CLAUDE.md"
+        echo "@.monet" >> "$TARGET_CLAUDE"
+        echo "  Added @.monet to CLAUDE.md"
     else
-        echo "  CLAUDE.md already contains mnemo instructions — skipped"
+        echo "  CLAUDE.md already imports .monet - skipped"
     fi
 else
-    cp "$MNEMO_INSTRUCTIONS" "$TARGET_CLAUDE"
-    echo "  Created CLAUDE.md with mnemo instructions"
+    echo "@.monet" > "$TARGET_CLAUDE"
+    echo "  Created CLAUDE.md with @.monet import"
 fi
 
 # Bootstrap tree from codebase

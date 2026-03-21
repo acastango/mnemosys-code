@@ -31,7 +31,8 @@ mnemo init
 
 `mnemo init`:
 - Creates `.mnemo/` in your project (gitignored automatically)
-- Injects memory instructions into `CLAUDE.md`
+- Creates `.monet` with monet-code instructions for Claude
+- Adds `@.monet` to `CLAUDE.md` (one clean import line)
 - Runs a static AST scan to bootstrap the tree from your existing codebase — new sessions start with structural knowledge already in place
 
 The MCP server auto-detects the store by walking up from the working directory. No per-project configuration needed after `mnemo init`.

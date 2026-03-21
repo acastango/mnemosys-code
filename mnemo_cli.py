@@ -61,22 +61,27 @@ def cmd_init(_args) -> None:
         gitignore.write_text("# mnemo project memory\n.mnemo/\n", encoding="utf-8")
         print("  Created .gitignore with .mnemo/")
 
-    # Inject mnemo instructions into CLAUDE.md
+    # Write .monet (monet-code instructions for Claude)
     claude_mnemo = Path(__file__).parent / "CLAUDE_MNEMO.md"
-    target_claude = project_dir / "CLAUDE.md"
+    dot_monet = project_dir / ".monet"
     if claude_mnemo.exists():
         instructions = claude_mnemo.read_text(encoding="utf-8")
-        if target_claude.exists():
-            existing = target_claude.read_text(encoding="utf-8")
-            if "mnemo instructions" not in existing:
-                with open(target_claude, "a", encoding="utf-8") as f:
-                    f.write("\n" + instructions)
-                print("  Appended mnemo instructions to CLAUDE.md")
-            else:
-                print("  CLAUDE.md already has mnemo instructions - skipped")
+        dot_monet.write_text(instructions, encoding="utf-8")
+        print("  Created .monet with monet-code instructions")
+
+    # Add @.monet import to CLAUDE.md
+    target_claude = project_dir / "CLAUDE.md"
+    if target_claude.exists():
+        existing = target_claude.read_text(encoding="utf-8")
+        if "@.monet" not in existing:
+            with open(target_claude, "a", encoding="utf-8") as f:
+                f.write("\n@.monet\n")
+            print("  Added @.monet to CLAUDE.md")
         else:
-            target_claude.write_text(instructions, encoding="utf-8")
-            print("  Created CLAUDE.md with mnemo instructions")
+            print("  CLAUDE.md already imports .monet - skipped")
+    else:
+        target_claude.write_text("@.monet\n", encoding="utf-8")
+        print("  Created CLAUDE.md with @.monet import")
 
     # Bootstrap tree from codebase
     print("  Scanning codebase to bootstrap tree...")

@@ -89,22 +89,25 @@ claude mcp add mnemo `
     -e "MNEMO_PROJECT_ROOT=$ProjectDir" `
     -- uv run --with fastmcp --directory "$MnemoSrc" fastmcp run mnemo_mcp.py
 
-# Inject mnemo instructions into the project's CLAUDE.md
+# Write .monet (monet-code instructions for Claude)
 $MnemoInstructions = Join-Path $MnemoSrc "CLAUDE_MNEMO.md"
-$TargetClaude = Join-Path $ProjectDir "CLAUDE.md"
+$DotMonet = Join-Path $ProjectDir ".monet"
+Copy-Item $MnemoInstructions $DotMonet
+Write-Host "  Created .monet with monet-code instructions"
 
+# Add @.monet import to CLAUDE.md
+$TargetClaude = Join-Path $ProjectDir "CLAUDE.md"
 if (Test-Path $TargetClaude) {
     $Existing = Get-Content $TargetClaude -Raw -ErrorAction SilentlyContinue
-    if ($Existing -notmatch "mnemo instructions") {
-        Add-Content $TargetClaude "`n"
-        Get-Content $MnemoInstructions | Add-Content $TargetClaude
-        Write-Host "  Appended mnemo instructions to CLAUDE.md"
+    if ($Existing -notmatch '@\.monet') {
+        Add-Content $TargetClaude "`n@.monet"
+        Write-Host "  Added @.monet to CLAUDE.md"
     } else {
-        Write-Host "  CLAUDE.md already contains mnemo instructions - skipped"
+        Write-Host "  CLAUDE.md already imports .monet - skipped"
     }
 } else {
-    Copy-Item $MnemoInstructions $TargetClaude
-    Write-Host "  Created CLAUDE.md with mnemo instructions"
+    Set-Content $TargetClaude "@.monet"
+    Write-Host "  Created CLAUDE.md with @.monet import"
 }
 
 # Bootstrap tree from codebase
