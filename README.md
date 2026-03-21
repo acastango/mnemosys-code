@@ -1,5 +1,6 @@
-# monet-code
+# monet-code 
 
+monet as in Moneta - Roman goddess. But coincidentally, Claude Monet - founder of impressionism in painting.
 Persistent memory for Claude Code. Gives Claude a content-addressed knowledge tree that survives context resets — so it stops rediscovering why your code is structured the way it is.
 
 ---
