@@ -129,14 +129,14 @@ memory_arc("goal description")         # track a multi-session work arc
 
 ### Proactive recall hook
 
-Injects memory context before every Edit/Write — zero API calls, ~10ms.
+Injects memory context before every Edit/Write — zero API calls, ~10ms. Installed automatically by `mnemo install`.
 
-Add to `~/.claude/settings.json` under `hooks.PreToolUse`:
+To add manually, under `hooks.PreToolUse` in `~/.claude/settings.json`:
 
 ```json
 {
   "matcher": "Edit|Write",
-  "hooks": [{ "type": "command", "command": "python -m mnemo_hook" }]
+  "hooks": [{ "type": "command", "command": "mnemo hook" }]
 }
 ```
 
