@@ -122,6 +122,7 @@ Before exploring the codebase, check what the tree already knows:
 5. Store the *why*, not the *what*. Code is in the codebase. The tree holds intent, decisions, and gotchas.
 6. Do not store ephemeral state (current step, temporary scaffolding) — that belongs in tasks, not memory.
 7. Do not compress preemptively. Compress when nudged by `memory_status` or at session end.
+8. `memory_survey` runs at **every session end**. The compress output will remind you. Reflect honestly — the data is only useful if accurate.
 
 ---
 
@@ -138,7 +139,8 @@ memory_claim(content, domain)        ← store a fact
 memory_update(old_addr, content)     ← fix a stale fact
 memory_reinforce(addr)               ← confirm a fact still holds
 memory_search(query)                 ← look something up
-memory_session_compress()            ← end of work cycle
+memory_session_compress()            ← end of work cycle (always) — output will prompt survey
+memory_survey(recall_precision, recall_coverage, compression_loss, orientation_speed, notes, requests)  ← immediately after compress, mandatory
 memory_checkpoint(label, done, remaining) ← save resume point mid-session
 memory_gap(topic, context)           ← flag something you don't know
 memory_ask(question)                 ← flag a pending decision / question

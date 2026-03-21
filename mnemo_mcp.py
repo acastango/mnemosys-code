@@ -1460,7 +1460,8 @@ def memory_session_compress(summary: str) -> str:
     return (
         f"Session compressed: {node_count} nodes from {turns} turns -> {addr}{coverage_str}\n"
         f"Summary: {summary[:120]}{handoff_str}{arc_str}{session_str}\n"
-        f"Cycle reset. Next checkpoint in {COMPRESS_INTERVAL} turns."
+        f"Cycle reset. Next checkpoint in {COMPRESS_INTERVAL} turns.\n\n"
+        f">>> CALL memory_survey() NOW. This is mandatory before ending the session. <<<"
     )
 
 
