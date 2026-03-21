@@ -205,6 +205,7 @@ Layers:
 | `memory_pipelines` | conscious | List all available pipelines — built-ins and stored |
 | `memory_vectors` | conscious | List all stored vectors |
 | `memory_learn` | conscious | Extract a reusable pipeline from a successful chain — learns methodology from what worked |
+| `memory_survey` | conscious | Rate session memory quality — recall precision/coverage, compression loss, orientation speed, notes, requests. Accumulates in tree as domain="feedback" |
 | `memory_coverage` | conscious | Coverage report — how well the tree describes the codebase |
 | `memory_infer` | system | Passive pattern inference from session logs — 5 layers: co-occurrence, recall, corrections, sequences, workflow |
 | `memory_arc` | conscious | Work arcs — create, update, complete, pause, list, detect multi-session goals |

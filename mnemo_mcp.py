@@ -2320,6 +2320,94 @@ def memory_learn(chain_id: str, name: str = "", store_pipeline: bool = True) -> 
 
 
 @mcp.tool()
+def memory_survey(
+    recall_precision:  float = None,
+    recall_coverage:   float = None,
+    compression_loss:  float = None,
+    orientation_speed: float = None,
+    notes:    str  = "",
+    requests: list = None,
+) -> str:
+    """
+    Rate the quality of memory for this session. Called by Claude instances
+    to provide feedback that accumulates in the tree and informs tuning.
+
+    Ratings are 0.0-1.0 floats. Omit any dimension you can't meaningfully rate.
+
+    Args:
+        recall_precision:  Did recall surface relevant nodes? (1=precise, 0=noisy)
+        recall_coverage:   Did recall miss important things? (1=complete, 0=many gaps)
+        compression_loss:  Did compressions lose critical detail? (0=lossless, 1=lossy)
+        orientation_speed: How quickly did you get oriented? (1=immediately, 0=slow)
+        notes:    Free-form observations about what worked or didn't
+        requests: Explicit asks for the memory system — tuning, behaviour changes,
+                  things to store differently. These accumulate across sessions
+                  and can be mined with memory_search("requests ...").
+                  e.g. ["surface architecture nodes earlier",
+                        "stop compressing issues domain so aggressively"]
+    """
+    ratings = {}
+    if recall_precision  is not None: ratings["recall_precision"]  = float(recall_precision)
+    if recall_coverage   is not None: ratings["recall_coverage"]   = float(recall_coverage)
+    if compression_loss  is not None: ratings["compression_loss"]  = float(compression_loss)
+    if orientation_speed is not None: ratings["orientation_speed"] = float(orientation_speed)
+
+    reqs = list(requests) if requests else []
+
+    # Build human-readable content
+    parts = []
+    labels = {
+        "recall_precision":  "recall precision",
+        "recall_coverage":   "recall coverage",
+        "compression_loss":  "compression loss",
+        "orientation_speed": "orientation speed",
+    }
+    for key, label in labels.items():
+        if key in ratings:
+            parts.append(f"{label}={ratings[key]:.2f}")
+    summary = "Session survey: " + (", ".join(parts) if parts else "no ratings")
+    if notes:
+        summary += f". {notes}"
+    if reqs:
+        summary += f". Requests: {'; '.join(reqs)}"
+
+    node = Node(
+        type="leaf",
+        content=summary,
+        meta={
+            "domain":   "feedback",
+            "source":   "survey",
+            "ratings":  ratings,
+            "notes":    notes,
+            "requests": reqs,
+            "created":  time.time(),
+        },
+    )
+    store.put(node)
+    active = store.get_active()
+    active.add(node.addr)
+    store.set_active(active)
+    _save_session_state()
+
+    emit("survey", "conscious", summary,
+         addresses=[node.addr],
+         detail={"ratings": ratings, "requests": reqs})
+
+    lines = [f"Survey stored: {node.addr[:8]}"]
+    if ratings:
+        for key, label in labels.items():
+            if key in ratings:
+                lines.append(f"  {label}: {ratings[key]:.2f}")
+    if reqs:
+        lines.append(f"  requests ({len(reqs)}):")
+        for r in reqs:
+            lines.append(f"    - {r}")
+    if notes:
+        lines.append(f"  notes: {notes}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
 def memory_coverage(path: str = ".", extensions: str = "") -> str:
     """
     Anchor coverage report: what percentage of this codebase has
